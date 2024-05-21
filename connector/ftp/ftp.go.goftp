@@ -1,0 +1,85 @@
+package connector
+
+import (
+	"log"
+	"os"
+	"path/filepath"
+
+	"github.com/secsy/goftp"
+	"github.com/zkrakko/SimpleBackup/utils"
+)
+
+type config struct {
+	Ftp struct {
+		Server   string `json:"server" validate:"required"`
+		User     string `json:"user" validate:"required"`
+		Password string `json:"password" validate:"required"`
+	} `json:"ftp"`
+}
+
+type FTPConnector struct {
+	cfg    config
+	client *goftp.Client
+}
+
+func NewFTPConnector(configParser *utils.ConfigParser) (*FTPConnector, error) {
+	cfg := config{}
+	err := configParser.Parse(&cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &FTPConnector{cfg: cfg}, nil
+}
+
+func (c *FTPConnector) Connect() error {
+	log.Printf("connecting to %s@%s", c.cfg.Ftp.User, c.cfg.Ftp.Server)
+	config := goftp.Config{}
+	config.User = c.cfg.Ftp.User
+	config.Password = c.cfg.Ftp.Password
+	client, err := goftp.DialConfig(config, c.cfg.Ftp.Server)
+	if err != nil {
+		return err
+	}
+	c.client = client
+	return nil
+}
+
+func (c *FTPConnector) Disconnect() error {
+	log.Print("disconnecting from server")
+	err := c.client.Close()
+	if err != nil {
+		return err
+	}
+	c.client = nil
+	return nil
+}
+
+func (c *FTPConnector) MkDirs(path string) error {
+	_, err := c.client.Mkdir(path)
+	if err != nil && filepath.Dir(path) != path {
+		err := c.MkDirs(filepath.Dir(path))
+		if err != nil {
+			return err
+		}
+		_, err = c.client.Mkdir(path)
+		return err
+	}
+	return err
+}
+
+func (c *FTPConnector) Upload(src, dst string) error {
+	f, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	return c.client.Store(dst, f)
+}
+
+func (c *FTPConnector) GetFileInfo(path string) (*FileInfo, error) {
+	info, err := c.client.Stat(path)
+	if err != nil {
+		return nil, err
+	}
+	return &FileInfo{Name: info.Name(), Size: int64(info.Size()), Time: info.ModTime()}, nil
+}
