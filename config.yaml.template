@@ -1,0 +1,8 @@
+ftp:
+  server: <host:port>
+  user: <username>
+  password: <password>
+sync:
+  folders:
+    - from: /local/folder
+      to: /backup/folder
